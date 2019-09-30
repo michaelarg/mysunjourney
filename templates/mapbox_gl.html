@@ -1,0 +1,429 @@
+<!-- templates/mapbox_gl.html -->
+
+<html>
+<head>
+    <meta charset='utf-8' />
+    <title>Sun Journey</title>
+    <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
+    <script src='https://api.tiles.mapbox.com/mapbox-gl-js/v1.3.1/mapbox-gl.js'></script>
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+    <script src='https://api.mapbox.com/mapbox.js/plugins/turf/v3.0.11/turf.min.js'></script>
+    <link href='https://api.tiles.mapbox.com/mapbox-gl-js/v1.3.1/mapbox-gl.css' rel='stylesheet' 
+        />
+    <style>
+        body { margin:0; padding:0; }
+        #map { position:absolute; top:0; bottom:0; width:100%; }
+    </style>
+</head>
+<body>
+
+<style>
+button {
+    position: absolute;
+    margin: 20px;
+}
+ 
+#pause::after {
+content: "Now";
+}
+ 
+#pause.pause::after {
+content: 'Play';
+}
+
+.filter-ctrl {
+position: absolute;
+top: 100px;
+right: 10px;
+z-index: 1;
+width: 240px;
+}
+
+.filter-ctrl input[type=datetime-local] {
+    font: 14px/20px 'Helvetica Neue', Arial, Helvetica, sans-serif;
+    width: 100%;
+    border: 0;
+    background-color: #fff;
+    height: 40px;
+    margin: 0;
+    color: rgba(0, 0, 0, 0.5);
+    padding: 10px;
+    border-radius: 3px;
+}
+
+progress progressbar[type=submit] {
+    font: 14px/20px 'Helvetica Neue', Arial, Helvetica, sans-serif;
+    width: 100%;
+    border: 0;
+    background-color: #fff;
+    height: 0px;
+    margin: 0;
+    color: rgba(0, 0, 0, 0.5);
+    padding: 10px;
+    border-radius: 3px;
+}
+
+</style>
+
+<script src='https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v4.4.1/mapbox-gl-geocoder.min.js'></script>
+<link rel='stylesheet' href='https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v4.4.1/mapbox-gl-geocoder.css' type='text/css' />
+<div id='map'></div>
+
+<div class='filter-ctrl'>
+    <input id='filter-input' type='datetime-local' name='filter'/>
+</div>
+<div class="progress">
+    <input id='progressbar' role="progressbar" aria-valuenow="70"
+    aria-valuemin="0" aria-valuemax="100" style="width:70%">
+      <span class="sr-only">70% Complete</span>
+</div>
+
+
+<script>
+mapboxgl.accessToken = '{{ACCESS_KEY}}';
+
+var map = new mapboxgl.Map({
+    container: 'map',
+    style: 'mapbox://styles/mapbox/streets-v11',
+    center: [{{Long}},{{Lat}}],
+    zoom: 10
+});
+ 
+// Create a GeoJSON source with an empty lineString.
+var geojson = {
+    "type": "FeatureCollection",
+    "features": [{
+        "type": "Feature",
+        "geometry": {
+            "type": "LineString",
+            "coordinates": []
+        }
+    }]
+};
+
+var geojson_point = {
+    "type": "FeatureCollection",
+    "features": [{
+        "type": "Feature",
+        "geometry": {
+            "type": "Point",
+            "coordinates": []
+        }
+    }]
+};
+
+fetch('/getters')
+    .then(function (response) {
+        return response.json(); // But parse it as JSON this time
+    })
+    .then(function (json) {
+        console.log('GET response as JSON:');
+        console.log(json); // Here’s our JSON object
+    })
+
+var speedFactor = 30; // number of frames per longitude degree
+var animation; // to store and cancel the animation
+var startTime = 0;
+var progress = 0; // progress = timestamp - startTime
+var resetTime = false; // indicator of whether time reset is needed for the animation
+var pauseButton = document.getElementById('pause');
+var datebox = document.getElementById('filter-input');
+
+//var d = new Date().toISOString().slice(0,19)
+
+function formatDateWithZone(date, tz) {
+    var s = date.toLocaleString('en-GB', { timeZone: tz });
+    var a = s.split(/\D/);
+    return a[2] + '-' + a[1] + '-' + a[0] + 'T'  + a[4] + ':' + a[5] + ':' + a[6];
+}
+
+console.log("ummm ok")
+
+var d = formatDateWithZone(new Date(), 'Australia/Sydney')
+console.log(d)
+datebox.value = d;
+
+datebox.onchange = function() {
+    console.log("change detected");
+    //datebox.value = d;
+    timeChange(datebox.value);
+
+}
+
+function timeChange(timestamp) {
+    var obj = { time: timestamp};
+    fetch('/getters', {
+    // Specify the method
+        method: 'POST',
+        headers: new Headers({
+        "content-type": "application/json"}),
+    // A JSON payload
+        body: JSON.stringify(obj)
+    }).then(function (response) { // At this point, Flask has printed our JSON
+        return response;
+    }).then(function (text) {
+        console.log('Send off new time -> POST response: ');
+        //console.log(text);
+})};
+
+var geocoder_origin = new MapboxGeocoder({
+    accessToken: mapboxgl.accessToken,
+    mapboxgl: mapboxgl,
+    countries: 'au',
+    placeholder: "Origin",
+    flyTo: false
+})
+var geocoder_destination = new MapboxGeocoder({
+    accessToken: mapboxgl.accessToken,
+    mapboxgl: mapboxgl,
+    countries: 'au',
+    placeholder: "Destination",
+    flyTo: false
+})
+
+var radius = 20;
+
+map.addControl(geocoder_origin);
+map.addControl(geocoder_destination);
+
+geocoder_origin.on('result', function(e) {
+    console.log('origin_input')
+    $.ajax({
+    type: "POST",
+    url: "{{ url_for('mapbox_gl') }}",
+    contentType: "application/json",
+    data: JSON.stringify({ id: 'origin',data: e.result["text_en-US"] }),
+    dataType: "json",
+    success: function() {
+        console.log("POST-Success");
+    },
+
+    error: function() {
+
+        console.log("reloading")
+        location.reload();
+        console.log('POST-Error2');
+        console.log('POST-Error');
+    }
+    });
+
+    fetch('/getters')
+    .then(function (response) {
+        return response.json(); // But parse it as JSON this time
+    })
+    .then(function (json) {
+        console.log('GET response as JSON:');
+        console.log(json); // Here’s our JSON object
+    })
+});
+
+fetch('/load_fresh')
+    .then(function (response) {
+        console.log('Received from load_fresh:');
+        return response.json(); // But parse it as JSON this time
+    })
+    .then(function (json) {
+        console.log('GET response as JSON from load_fresh:');
+        console.log(json); // Here’s our JSON object  
+    })
+
+$(function(){
+setInterval(oneSecondFunction, 2000);
+});
+
+function oneSecondFunction() {
+    fetch('/load_fresh')
+    .then(function (response) {
+        console.log('Received from load_fresh:');
+        return response.json(); // But parse it as JSON this time
+    })
+    .then(function (json) {
+        if(json.reload == 2){
+            console.log(json)
+            json.reload = 1
+            datebox.value = json.time;
+            console.log(json)
+            console.log('reload site') 
+
+        } else {
+            console.log(json)
+            console.log('all good')
+
+        }
+        })
+    }
+
+
+    
+
+geocoder_destination.on('result', function(e) {
+    console.log('destination_input')
+    $.ajax({
+    type: "POST",
+    url: "{{ url_for('mapbox_gl') }}",
+    contentType: "application/json",
+    data: JSON.stringify({ id: 'destination',data: e.result["text_en-US"]}),
+    dataType: "json",
+    success: function() {
+        console.log("POST-Success");
+    },
+    error: function() {
+        //localStorage.setItem("someVarKey", e.result["text_en-US"]);
+        var dest = e.result["text_en-US"];
+        localStorage.setItem("destination_cache", dest);
+
+        console.log("reloading")
+        location.reload();
+        console.log('POST-Error2');
+    }
+    });
+});
+console.log("run")
+counter = 0;
+
+function pointOnCircle(lon,lat) {
+    return {
+        "type": "Point",
+        "coordinates": [
+            lon,
+            lat
+        ]
+    };
+}
+
+
+map.on('load', function() {
+
+    map.addSource('point', {
+        "type": "geojson",
+        "data": geojson_point
+    });
+
+    map.addLayer({
+        "id": "point",
+        "source": "point",
+        "type": "circle",
+        "paint": {
+        "circle-radius": 10,
+        "circle-color": "#F4D41F"
+        }
+    });
+    
+    map.addLayer({
+        'id': 'line-animation',
+        'type': 'line',
+        'source': {
+            'type': 'geojson',
+            'data': {
+                "type": "Feature",
+                "properties": {},
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": geojson
+                }
+            }
+        },
+        'layout': {
+            'line-cap': 'round',
+            'line-join': 'round'
+        },
+        'paint': {
+            'line-color': '#ed6498',
+            'line-width': 5,
+            'line-opacity': .8
+        }
+    });
+
+    startTime = performance.now();
+ 
+    animateLine();
+ 
+// click the button to pause or play
+    pauseButton.addEventListener('click', function() {
+        pauseButton.classList.toggle('pause');
+        if (pauseButton.classList.contains('pause')) {
+            cancelAnimationFrame(animation);
+        } else {
+            resetTime = true;
+            animateLine();
+        }
+    });
+     
+    // reset startTime and progress once the tab loses or gains focus
+    // requestAnimationFrame also pauses on hidden tabs by default
+    document.addEventListener('visibilitychange', function() {
+        resetTime = true;
+    });
+
+    function animateLine(timestamp) {
+        if (resetTime) {
+    // resume previous progress
+            startTime = performance.now() - progress;
+            resetTime = false;
+        } else {
+            progress = timestamp - startTime;
+        }   
+     
+    // restart if it finishes a loop
+        if (progress > speedFactor * 360) {
+            startTime = timestamp;
+            geojson.features[0].geometry.coordinates = [];
+            var points = turf.featureCollection([]);
+            geojson_point.features[0].geometry.coordinates = [];
+
+        } else {
+            var coords = {{geojson_input}};
+            var x = coords[counter][0];
+            var y = coords[counter][1];
+
+            var coords_point = {{sun_posi}};
+           // var xx = coords_point[counter][0];
+          //  var yy = coords_point[counter][1];
+            var xx = coords_point[counter][0];
+            var yy = coords_point[counter][1];
+    
+        // append new coordinates to the lineString
+            geojson.features[0].geometry.coordinates.push([x, y]);
+            
+            
+            geojson_point.features[0].geometry.coordinates = [];
+            
+            var lngLat = new Array(xx,yy);
+            //points.features.push(turf.point(lngLat));
+         
+            map.getSource('point').setData(pointOnCircle(xx,yy));
+            geojson_point.features[0].geometry.coordinates.push([xx,yy]);
+
+        // then update the map
+            map.getSource('line-animation').setData(geojson);
+            //map.getSource('point').setData(geojson_point);
+        }
+        // Request the next frame of the animation.
+        animation = requestAnimationFrame(animateLine);
+        counter = counter + 1;
+    }
+
+
+
+   // function animateMarker(timestamp) {
+        // Update the data to a new position based on the animation timestamp. The
+        // divisor in the expression `timestamp / 1000` controls the animation speed.
+    //    map.getSource('point').setData(pointOnCircle(timestamp / 1000));
+ 
+        // Request the next frame of the animation.
+    //    requestAnimationFrame(animateMarker);
+   // }
+
+
+   // animateMarker(0);
+});
+
+map.on('zoom', function() {
+    console.log(map.getBounds())
+    }
+);
+
+</script>
+
+</body>
+</html>
