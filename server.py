@@ -40,9 +40,10 @@ def mapbox_gl():
     print("User_Time", user_time)
     
     getters()
-    user_time = session.get('my_var', None)
+   # user_time = session.get('my_var', None)
+   # dd = session.get('dd', None)
 
-    print('getters returned',user_time)
+    #print('getters returned',user_time,dds)
 
 
     if a is not None and execution_counter > 0:
@@ -112,16 +113,24 @@ def getters():
    
     if request.method == 'POST':
         print('Incoming..')
-        print(request.get_json()['time'])  # parse as JSON
+        print(request.get_json())  # parse as JSON
         #print("ummmmmmmmmm")
-        session['my_var'] = request.get_json()['time']
+        print('time')
+        print(request.get_json()['time'])
+
+        print('test')
+        print(request.get_json()['test'])
+
+       # session['my_var'] = request.get_json()['time']
+        #session['dd'] = request.get_json()['dest']
+
         return redirect(url_for('mapbox_gl'))
 
     # GET request
     else:
+        print(request.get_json())
         message = {'greeting': execution_counter}
         return jsonify(message)  # serialize and use JSON headers
-
 
 @app.route('/load_fresh', methods=['POST','GET'])
 def load_refresh():

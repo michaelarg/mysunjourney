@@ -18,22 +18,18 @@
 <body>
 
 <style>
-button {
-    position: absolute;
-    margin: 20px;
-}
- 
-#pause::after {
-content: "Now";
-}
- 
-#pause.pause::after {
-content: 'Play';
-}
 
 .filter-ctrl {
 position: absolute;
 top: 100px;
+right: 10px;
+z-index: 1;
+width: 240px;
+}
+
+.submit-ctrl {
+position: absolute;
+top: 150px;
 right: 10px;
 z-index: 1;
 width: 240px;
@@ -50,13 +46,12 @@ width: 240px;
     padding: 10px;
     border-radius: 3px;
 }
-
-progress progressbar[type=submit] {
+.submit-ctrl input[type=submit] {
     font: 14px/20px 'Helvetica Neue', Arial, Helvetica, sans-serif;
     width: 100%;
     border: 0;
     background-color: #fff;
-    height: 0px;
+    height: 40px;
     margin: 0;
     color: rgba(0, 0, 0, 0.5);
     padding: 10px;
@@ -72,12 +67,9 @@ progress progressbar[type=submit] {
 <div class='filter-ctrl'>
     <input id='filter-input' type='datetime-local' name='filter'/>
 </div>
-<div class="progress">
-    <input id='progressbar' role="progressbar" aria-valuenow="70"
-    aria-valuemin="0" aria-valuemax="100" style="width:70%">
-      <span class="sr-only">70% Complete</span>
+<div class='submit-ctrl'>
+    <input id='submit-input' type='submit' name='submit'/>
 </div>
-
 
 <script>
 mapboxgl.accessToken = '{{ACCESS_KEY}}';
@@ -112,15 +104,6 @@ var geojson_point = {
     }]
 };
 
-fetch('/getters')
-    .then(function (response) {
-        return response.json(); // But parse it as JSON this time
-    })
-    .then(function (json) {
-        console.log('GET response as JSON:');
-        console.log(json); // Here’s our JSON object
-    })
-
 var speedFactor = 30; // number of frames per longitude degree
 var animation; // to store and cancel the animation
 var startTime = 0;
@@ -143,29 +126,6 @@ var d = formatDateWithZone(new Date(), 'Australia/Sydney')
 console.log(d)
 datebox.value = d;
 
-datebox.onchange = function() {
-    console.log("change detected");
-    //datebox.value = d;
-    timeChange(datebox.value);
-
-}
-
-function timeChange(timestamp) {
-    var obj = { time: timestamp};
-    fetch('/getters', {
-    // Specify the method
-        method: 'POST',
-        headers: new Headers({
-        "content-type": "application/json"}),
-    // A JSON payload
-        body: JSON.stringify(obj)
-    }).then(function (response) { // At this point, Flask has printed our JSON
-        return response;
-    }).then(function (text) {
-        console.log('Send off new time -> POST response: ');
-        //console.log(text);
-})};
-
 var geocoder_origin = new MapboxGeocoder({
     accessToken: mapboxgl.accessToken,
     mapboxgl: mapboxgl,
@@ -187,34 +147,12 @@ map.addControl(geocoder_origin);
 map.addControl(geocoder_destination);
 
 geocoder_origin.on('result', function(e) {
-    console.log('origin_input')
-    $.ajax({
-    type: "POST",
-    url: "{{ url_for('mapbox_gl') }}",
-    contentType: "application/json",
-    data: JSON.stringify({ id: 'origin',data: e.result["text_en-US"] }),
-    dataType: "json",
-    success: function() {
-        console.log("POST-Success");
-    },
+    var origin_input = e.result["text_en-US"];
+    console.log("fired")
+});
 
-    error: function() {
-
-        console.log("reloading")
-        location.reload();
-        console.log('POST-Error2');
-        console.log('POST-Error');
-    }
-    });
-
-    fetch('/getters')
-    .then(function (response) {
-        return response.json(); // But parse it as JSON this time
-    })
-    .then(function (json) {
-        console.log('GET response as JSON:');
-        console.log(json); // Here’s our JSON object
-    })
+geocoder_destination.on('result', function(e) {
+    var destination_input = e.result["text_en-US"];
 });
 
 fetch('/load_fresh')
@@ -227,57 +165,30 @@ fetch('/load_fresh')
         console.log(json); // Here’s our JSON object  
     })
 
-$(function(){
-setInterval(oneSecondFunction, 2000);
-});
 
-function oneSecondFunction() {
-    fetch('/load_fresh')
-    .then(function (response) {
-        console.log('Received from load_fresh:');
-        return response.json(); // But parse it as JSON this time
-    })
-    .then(function (json) {
-        if(json.reload == 2){
-            console.log(json)
-            json.reload = 1
-            datebox.value = json.time;
-            console.log(json)
-            console.log('reload site') 
-
-        } else {
-            console.log(json)
-            console.log('all good')
-
-        }
-        })
-    }
-
-
+document.getElementById("submit-input").addEventListener('click',function ()
+{
+    console.log("hello");
+    var timestamp = document.getElementById("filter-input").value;
+    var obj = {"time": timestamp, "test": window.destination_input.toLocaleString()};
     
+    fetch('/getters', {
+    // Specify the method
+        method: 'POST',
+        headers: new Headers({
+        "content-type": "application/json"}),
+        body: JSON.stringify(obj)
+    }).then(function (response) { // At this point, Flask has printed our JSON
+        return response;
+    }).then(function (text) {
+        console.log('Send off new time -> POST response: ');
+        console.log(text);
+    }).catch(function(error) {                        // catch
+    console.log('Request failed', error);
+  });
 
-geocoder_destination.on('result', function(e) {
-    console.log('destination_input')
-    $.ajax({
-    type: "POST",
-    url: "{{ url_for('mapbox_gl') }}",
-    contentType: "application/json",
-    data: JSON.stringify({ id: 'destination',data: e.result["text_en-US"]}),
-    dataType: "json",
-    success: function() {
-        console.log("POST-Success");
-    },
-    error: function() {
-        //localStorage.setItem("someVarKey", e.result["text_en-US"]);
-        var dest = e.result["text_en-US"];
-        localStorage.setItem("destination_cache", dest);
-
-        console.log("reloading")
-        location.reload();
-        console.log('POST-Error2');
-    }
-    });
 });
+
 console.log("run")
 counter = 0;
 
